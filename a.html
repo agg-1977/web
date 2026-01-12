@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VaultPro Cloud | Back Camera Fix</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, getDocs, doc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDiuJzAE0cPsyIFP4AbOhMogCYYMveYWs0",
+            authDomain: "management-system-42018.firebaseapp.com",
+            projectId: "management-system-42018",
+            storageBucket: "management-system-42018.firebasestorage.app",
+            messagingSenderId: "54905325970",
+            appId: "1:54905325970:web:d904a020fc8ca66fa2d94b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let html5QrCode;
+        let tempBatch = [];
+        let bulkOutwardList = [];
+        let isProcessing = false;
+        let globalStock = [];
+
+        // --- CAMERA PERMISSION CHECKER ---
+        async function checkCamera() {
+            if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+                alert("CRITICAL: Camera only works on HTTPS. Please host your file on Firebase Hosting or GitHub Pages.");
+                return false;
+            }
+            return true;
+        }
+
+        // --- START INWARD (BACK CAMERA FORCE) ---
+        window.startInwardSession = async () => {
+            if (!await checkCamera()) return;
+            const cat = document.getElementById('batchCategory').value;
+            if(!cat) return alert("Select Category!");
+
+            document.getElementById('mainView').classList.add('hidden');
+            document.getElementById('scannerView').classList.remove('hidden');
+            
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 20, qrbox: { width: 250, height: 150 } };
+
+            html5QrCode.start(
+                { facingMode: "environment" }, // FORCES BACK CAMERA
+                config,
+                (barcode) => {
+                    if (!isProcessing) {
+                        isProcessing = true;
+                        document.getElementById('beep').play();
+                        document.getElementById('currentBarcode').innerText = barcode;
+                        document.getElementById('detailOverlay').classList.remove('hidden');
+                        document.getElementById('inputWeight').focus();
+                    }
+                }
+            ).catch(err => {
+                alert("Camera Error: " + err);
+                location.reload();
+            });
+        };
+
+        // --- BULK OUTWARD (FIXED) ---
+        window.startBulkOutward = async () => {
+            if (!await checkCamera()) return;
+            bulkOutwardList = [];
+            document.getElementById('mainView').classList.add('hidden');
+            document.getElementById('outwardView').classList.remove('hidden');
+            
+            html5QrCode = new Html5Qrcode("outwardReader");
+            html5QrCode.start(
+                { facingMode: "environment" }, // FORCES BACK CAMERA
+                { fps: 20, qrbox: { width: 250, height: 150 } },
+                (barcode) => {
+                    if(!bulkOutwardList.includes(barcode)) {
+                        bulkOutwardList.push(barcode);
+                        document.getElementById('beep').play();
+                        const el = document.createElement('div');
+                        el.className = "text-xs font-mono p-3 bg-slate-800 rounded-xl mb-2 border border-blue-500/30 flex justify-between";
+                        el.innerHTML = `<span>${barcode}</span><i class="fas fa-check text-green-500"></i>`;
+                        document.getElementById('bulkListItems').prepend(el);
+                        document.getElementById('bulkCountLabel').innerText = bulkOutwardList.length;
+                    }
+                }
+            ).catch(err => alert("Camera Error: " + err));
+        };
+
+        // --- REMAINING LOGIC (CATEGORIES / SAVING) ---
+        window.addCategory = async () => {
+            const name = document.getElementById('newCatName').value;
+            if(!name) return;
+            await addDoc(collection(db, "categories"), { name });
+            document.getElementById('newCatName').value = '';
+            document.getElementById('adminModal').classList.add('hidden');
+        };
+
+        onSnapshot(collection(db, "categories"), (snap) => {
+            const select = document.getElementById('batchCategory');
+            const filterSelect = document.getElementById('filterCat');
+            const options = snap.docs.map(d => `<option value="${d.data().name}">${d.data().name}</option>`).join('');
+            select.innerHTML = `<option value="">Select Category</option>` + options;
+            filterSelect.innerHTML = `<option value="All">All Categories</option>` + options;
+        });
+
+        onSnapshot(query(collection(db, "stock"), orderBy("createdAt", "desc")), (snap) => {
+            globalStock = snap.docs.map(d => d.data());
+            renderStats(globalStock);
+            applyFilters();
+        });
+
+        function renderStats(stock) {
+            const gold = stock.filter(i => i.metal === 'Gold').reduce((acc, i) => acc + parseFloat(i.weight || 0), 0);
+            const silver = stock.filter(i => i.metal === 'Silver').reduce((acc, i) => acc + parseFloat(i.weight || 0), 0);
+            document.getElementById('goldTotal').innerText = gold.toFixed(2) + 'g';
+            document.getElementById('silverTotal').innerText = silver.toFixed(2) + 'g';
+        }
+
+        window.applyFilters = () => {
+            const catF = document.getElementById('filterCat').value;
+            const sizeF = document.getElementById('filterSize').value.toLowerCase();
+            const weightF = document.getElementById('filterWeight').value;
+
+            const filtered = globalStock.filter(i => {
+                const matchCat = catF === 'All' || i.category === catF;
+                const matchSize = !sizeF || (i.size && i.size.toLowerCase().includes(sizeF));
+                const matchWeight = !weightF || parseFloat(i.weight) >= parseFloat(weightF);
+                return matchCat && matchSize && matchWeight;
+            });
+
+            document.getElementById('directoryBody').innerHTML = filtered.map(i => `
+                <div class="bg-slate-900 p-4 rounded-2xl border border-white/5 mb-3 flex justify-between items-center">
+                    <div>
+                        <div class="text-[10px] font-bold ${i.metal === 'Gold' ? 'text-yellow-500' : 'text-slate-400'} uppercase">${i.metal} • ${i.category}</div>
+                        <div class="font-mono text-sm text-white">${i.barcode}</div>
+                        <div class="text-[10px] text-slate-500 italic">Size: ${i.size || '-'}</div>
+                    </div>
+                    <div class="text-xl font-black">${i.weight}g</div>
+                </div>
+            `).join('');
+        };
+
+        window.submitPiece = () => {
+            const w = document.getElementById('inputWeight').value;
+            if(!w) return;
+            tempBatch.push({ barcode: document.getElementById('currentBarcode').innerText, weight: w, size: document.getElementById('inputSize').value });
+            document.getElementById('batchCountLabel').innerText = tempBatch.length;
+            document.getElementById('detailOverlay').classList.add('hidden');
+            document.getElementById('inputWeight').value = '';
+            document.getElementById('inputSize').value = '';
+            isProcessing = false;
+        };
+
+        window.finishInward = async () => {
+            const cat = document.getElementById('batchCategory').value;
+            const metal = document.getElementById('metalType').value;
+            for(let item of tempBatch) {
+                await addDoc(collection(db, "stock"), { ...item, category: cat, metal: metal, createdAt: new Date() });
+            }
+            location.reload();
+        };
+
+        window.finalizeBulkOutward = async () => {
+            const recipient = document.getElementById('recipientName').value;
+            if(!recipient || bulkOutwardList.length === 0) return alert("Fill recipient & scan items!");
+            const batch = writeBatch(db);
+            const stockRef = collection(db, "stock");
+            for (let b of bulkOutwardList) {
+                const q = query(stockRef, where("barcode", "==", b));
+                const snap = await getDocs(q);
+                snap.forEach(d => {
+                    addDoc(collection(db, "history"), { ...d.data(), recipient, outwardDate: new Date() });
+                    batch.delete(doc(db, "stock", d.id));
+                });
+            }
+            await batch.commit();
+            location.reload();
+        };
+    </script>
+</head>
+<body class="bg-black text-slate-100 font-sans antialiased overflow-x-hidden">
+
+    <div id="mainView" class="pb-24">
+        <header class="p-6 bg-slate-900 rounded-b-[2.5rem] shadow-2xl border-b border-white/5">
+            <h1 class="text-xl font-black italic mb-6">VAULT<span class="text-blue-500">PRO</span></h1>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-yellow-500/10 p-4 rounded-3xl border border-yellow-500/20">
+                    <div class="text-[10px] uppercase font-bold text-yellow-500">Gold Total</div>
+                    <div id="goldTotal" class="text-2xl font-black">0.00g</div>
+                </div>
+                <div class="bg-slate-500/10 p-4 rounded-3xl border border-slate-500/20">
+                    <div class="text-[10px] uppercase font-bold text-slate-400">Silver Total</div>
+                    <div id="silverTotal" class="text-2xl font-black">0.00g</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-6 space-y-4">
+            <select id="filterCat" onchange="applyFilters()" class="w-full bg-slate-900 p-4 rounded-2xl text-sm border border-white/10 outline-none">
+                <option value="All">All Categories</option>
+            </select>
+            <div class="flex gap-2">
+                <input type="text" id="filterSize" oninput="applyFilters()" placeholder="Size" class="w-1/2 bg-slate-900 p-4 rounded-2xl text-sm border border-white/10 outline-none">
+                <input type="number" id="filterWeight" oninput="applyFilters()" placeholder="Min Wt" class="w-1/2 bg-slate-900 p-4 rounded-2xl text-sm border border-white/10 outline-none">
+            </div>
+        </div>
+
+        <div id="directoryBody" class="px-6 pb-20"></div>
+
+        <nav class="fixed bottom-0 left-0 right-0 bg-slate-900/90 backdrop-blur-lg p-4 flex justify-around items-center border-t border-white/5 pb-8">
+            <button onclick="document.getElementById('adminModal').classList.remove('hidden')" class="text-slate-500 text-center">
+                <i class="fas fa-cog text-lg"></i><br><span class="text-[10px] font-bold">Admin</span>
+            </button>
+            <button onclick="document.getElementById('inwardModal').classList.remove('hidden')" class="bg-blue-600 w-14 h-14 rounded-full -mt-12 border-4 border-black shadow-xl flex items-center justify-center">
+                <i class="fas fa-plus text-white text-xl"></i>
+            </button>
+            <button onclick="startBulkOutward()" class="text-slate-500 text-center">
+                <i class="fas fa-truck-loading text-lg"></i><br><span class="text-[10px] font-bold">Outward</span>
+            </button>
+        </nav>
+    </div>
+
+    <div id="scannerView" class="hidden fixed inset-0 bg-black z-50 flex flex-col">
+        <div id="reader" class="flex-1"></div>
+        <div class="p-6 bg-slate-900 flex justify-between items-center">
+            <span class="font-bold">Scanned: <span id="batchCountLabel" class="text-blue-500">0</span></span>
+            <button onclick="finishInward()" class="bg-green-600 px-8 py-3 rounded-2xl font-bold">FINISH</button>
+        </div>
+        <div id="detailOverlay" class="hidden absolute inset-0 bg-black/90 flex flex-col justify-center p-8 z-[60]">
+            <div class="bg-slate-900 p-8 rounded-[2rem] border border-blue-500">
+                <p id="currentBarcode" class="text-center text-blue-500 font-mono mb-6"></p>
+                <input type="number" id="inputWeight" placeholder="Weight (g)" class="w-full bg-slate-800 text-5xl p-6 rounded-3xl text-center mb-4 outline-none border border-white/5">
+                <input type="text" id="inputSize" placeholder="Size" class="w-full bg-slate-800 p-4 rounded-2xl text-center mb-6 outline-none border border-white/5">
+                <button onclick="submitPiece()" class="w-full bg-blue-600 py-5 rounded-2xl font-black text-xl">SUBMIT</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="outwardView" class="hidden fixed inset-0 bg-black z-50 flex flex-col">
+        <div id="outwardReader" class="h-1/2 bg-black"></div>
+        <div class="flex-1 bg-slate-900 p-6 rounded-t-[3rem] -mt-8 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="font-black text-orange-500 uppercase tracking-widest">Bulk Outward</h2>
+                <button onclick="location.reload()" class="text-xs text-slate-500">Cancel</button>
+            </div>
+            <div id="bulkListItems" class="flex-1 overflow-y-auto mb-4"></div>
+            <input type="text" id="recipientName" placeholder="Recipient Name" class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-white/5">
+            <button onclick="finalizeBulkOutward()" class="w-full bg-orange-600 py-5 rounded-2xl font-black text-xl">OUTWARD (<span id="bulkCountLabel">0</span>)</button>
+        </div>
+    </div>
+
+    <div id="adminModal" class="hidden fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-6">
+        <div class="bg-slate-900 w-full p-8 rounded-[2rem] border border-white/10">
+            <h2 class="font-bold mb-6">Manage Categories</h2>
+            <input type="text" id="newCatName" placeholder="New Category Name" class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-white/5">
+            <button onclick="addCategory()" class="w-full bg-blue-600 py-4 rounded-2xl font-bold">ADD CATEGORY</button>
+            <button onclick="document.getElementById('adminModal').classList.add('hidden')" class="w-full mt-4 text-slate-500">Close</button>
+        </div>
+    </div>
+
+    <div id="inwardModal" class="hidden fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-6">
+        <div class="bg-slate-900 w-full p-8 rounded-[2rem] border border-white/10">
+            <h2 class="font-bold mb-6 italic">Inward Setup</h2>
+            <select id="metalType" class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none">
+                <option value="Silver">Silver</option>
+                <option value="Gold">Gold</option>
+            </select>
+            <select id="batchCategory" class="w-full bg-slate-800 p-4 rounded-2xl mb-8 outline-none"></select>
+            <button onclick="startInwardSession()" class="w-full bg-blue-600 py-5 rounded-2xl font-bold shadow-lg">CONTINUOUS SCAN</button>
+            <button onclick="document.getElementById('inwardModal').classList.add('hidden')" class="w-full mt-4 text-slate-500 text-sm">Cancel</button>
+        </div>
+    </div>
+
+    <audio id="beep" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3"></audio>
+</body>
+</html>

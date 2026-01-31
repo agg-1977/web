@@ -394,7 +394,7 @@
     }
     const db = firebase.database();
     const auth = firebase.auth();
-    auth.languageCode = 'en'; // Force English
+    auth.languageCode = 'en'; 
 
     // --- REALTIME RATES ---
     db.ref('rates').on('value', (snapshot) => {
@@ -406,38 +406,55 @@
         }
     });
 
-    // --- LOGIN LOGIC ---
+    // --- LOGIN LOGIC (FIXED) ---
     window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
         'size': 'invisible'
     });
 
     function sendOTP() {
-        const phoneNumber = document.getElementById('phone-number').value;
-        const appVerifier = window.recaptchaVerifier;
+        var phoneNumber = document.getElementById('phone-number').value;
+        
+        // --- THE FIX: AUTO-FORMAT NUMBER ---
+        // 1. Remove spaces, dashes, or brackets
+        phoneNumber = phoneNumber.replace(/\s+/g, '').replace(/-/g, '');
+        
+        // 2. Check if it starts with +91, if not, add it
+        if (!phoneNumber.startsWith('+91')) {
+            // If they typed 9199..., assume they meant +91
+            if(phoneNumber.startsWith('91') && phoneNumber.length === 12) {
+                phoneNumber = '+' + phoneNumber;
+            } else {
+                phoneNumber = '+91' + phoneNumber;
+            }
+        }
+        
+        console.log("Sending OTP to:", phoneNumber); // Debugging line
 
-        if(phoneNumber.length < 10) { alert("Please enter a valid number"); return; }
+        const appVerifier = window.recaptchaVerifier;
 
         firebase.auth().signInWithPhoneNumber(phoneNumber, appVerifier)
             .then((confirmationResult) => {
                 window.confirmationResult = confirmationResult;
-                alert("OTP Sent!");
+                alert("OTP Sent to " + phoneNumber);
                 document.getElementById('step-phone').classList.add('hidden');
                 document.getElementById('step-otp').classList.remove('hidden');
             }).catch((error) => {
+                console.error(error);
                 alert("Error: " + error.message);
-                console.log(error);
+                // Reset captcha if error
+                window.recaptchaVerifier.render().then(function(widgetId) {
+                  grecaptcha.reset(widgetId);
+                });
             });
     }
 
     function verifyOTP() {
         const code = document.getElementById('otp-code').value;
         window.confirmationResult.confirm(code).then((result) => {
-            // User signed in successfully.
-            const user = result.user;
             alert("Login Successful!");
             showDashboard();
         }).catch((error) => {
-            alert("Incorrect OTP");
+            alert("Incorrect OTP. Please try again.");
         });
     }
 
@@ -451,14 +468,12 @@
         window.location.reload();
     }
 
-    // Check if user is already logged in
     auth.onAuthStateChanged((user) => {
         if (user) {
             showDashboard();
         }
     });
-
 </script>
-
 </body>
 </html>
+
